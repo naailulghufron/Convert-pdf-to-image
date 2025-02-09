@@ -1,0 +1,38 @@
+from django.http import FileResponse, JsonResponse
+from rest_framework.views import APIView
+from pdf2image import convert_from_path
+import os
+
+# POPPLER_PATH = "/usr/bin"  # Jika di Linux (Ubuntu/Debian), tidak perlu ini
+POPPLER_PATH = r"C:\poppler\Library\bin"  # Jika di Linux (Ubuntu/Debian), tidak perlu ini
+MEDIA_DIR = "media/"  # Folder untuk menyimpan hasil konversi
+
+class ConvertPDFView(APIView):
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return JsonResponse({"error": "No file provided"}, status=400)
+
+        pdf_file = request.FILES['file']
+        file_path = os.path.join(MEDIA_DIR, pdf_file.name)
+
+        # Simpan PDF yang diunggah
+        with open(file_path, 'wb') as f:
+            for chunk in pdf_file.chunks():
+                f.write(chunk)
+
+        try:
+            # Konversi PDF ke gambar (halaman pertama saja)
+            images = convert_from_path(file_path, poppler_path=POPPLER_PATH)
+            image_path = os.path.join(MEDIA_DIR, "output.png")
+            images[0].save(image_path, "PNG")  # Simpan sebagai PNG
+
+            # Kembalikan file gambar sebagai respons
+            return FileResponse(open(image_path, 'rb'), content_type="image/png")
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+        finally:
+            # Hapus file setelah selesai (opsional)
+            if os.path.exists(file_path):
+                os.remove(file_path)

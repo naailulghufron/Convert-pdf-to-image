@@ -1,45 +1,61 @@
-from django.shortcuts import render
-
-# Create your views here.
-
+from django.http import FileResponse, JsonResponse
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
-from pdf2image import convert_from_bytes
 from pdf2image import convert_from_path
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
 import os
+import zipfile
+import uuid
+
+# POPPLER_PATH = "/usr/bin"  # Untuk Linux
+POPPLER_PATH = r"C:\poppler\Library\bin"  # untuk Windows
+MEDIA_DIR = "media/"  # Folder untuk menyimpan hasil konversi
 
 class ConvertPDFView(APIView):
-    parser_classes = (MultiPartParser, FormParser)
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return JsonResponse({"error": "No file provided"}, status=400)
 
-    def post(self, request, *args, **kwargs):
-        file = request.FILES.get("file")
-        # print(file)
-        # return file
-        if not file:
-            return Response({"error": "No file provided"}, status=400)
+        pdf_file = request.FILES['file']
+        original_name = os.path.splitext(pdf_file.name)[0]  # Ambil nama asli tanpa ekstensi
+        unique_id = str(uuid.uuid4())[:8]  # Gunakan 8 karakter pertama UUID
+        pdf_name = f"{original_name}_{unique_id}"  # Format nama unik
+        pdf_path = os.path.join(MEDIA_DIR, f"{pdf_name}.pdf")
 
-        temp_path = default_storage.save(f"uploads/{file.name}", ContentFile(file.read()))
-        temp_full_path = default_storage.path(temp_path)
-# return (temp_full_path)
+        # Simpan PDF yang diunggah
+        with open(pdf_path, 'wb') as f:
+            for chunk in pdf_file.chunks():
+                f.write(chunk)
+
         try:
-            # images = convert_from_bytes(file.read())
-            # images = convert_from_bytes('sample.pdf',500, poppler_path=r'C:\poppler\Library\bin')
-            # images = convert_from_path(temp_full_path,500, poppler_path=r'C:\poppler\Library\bin') # for windows
-            images = convert_from_path(temp_full_path,500, poppler_path='/usr/bin') # for linux
-            # images = convert_from_path('sample.pdf',500, poppler_path=r'C:\poppler\Library\bin')
-            image_urls = []
-            for i, image in enumerate(images):
-                # return (image)
-                image_path = f"output/{file.name}_page_{i+1}.png"
-                image.save(default_storage.path(image_path), "PNG")
-                image_urls.append(default_storage.url(image_path))
-                # return Response({"image_urls": image_urls})
-                # return (image)
+            # Konversi PDF ke gambar (semua halaman)
+            images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
+            image_paths = []
+            zip_filename = os.path.join(MEDIA_DIR, f"{pdf_name}.zip")  # Nama ZIP sesuai PDF
 
-            return Response({"message": "Conversion successful", "images": image_urls})
+            # Simpan setiap halaman sebagai gambar
+            with zipfile.ZipFile(zip_filename, 'w') as zipf:
+                for i, img in enumerate(images):
+                    image_path = os.path.join(MEDIA_DIR, f"{pdf_name}_page_{i+1}.png")
+                    img.save(image_path, "PNG")
+                    zipf.write(image_path, os.path.basename(image_path))
+                    image_paths.append(image_path)
+
+            # Kembalikan ZIP sebagai respons
+            return FileResponse(open(zip_filename, 'rb'), content_type="application/zip", as_attachment=True, filename=f"{pdf_name}.zip")
+            # with open(zip_filename, 'rb') as zip_file:
+            #     response = FileResponse(zip_file, content_type="application/zip", as_attachment=True, filename=f"{pdf_name}.zip")
+
+            # return response
+
+
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return JsonResponse({"error": str(e)}, status=500)
 
+        finally:
+            # Hapus file sementara setelah selesai
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+            for img_path in image_paths:
+                if os.path.exists(img_path):
+                    os.remove(img_path)
+            if os.path.exists(zip_filename):
+                os.remove(zip_filename)
