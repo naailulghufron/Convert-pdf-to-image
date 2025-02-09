@@ -27,7 +27,8 @@ class ConvertPDFView(APIView):
         try:
             # images = convert_from_bytes(file.read())
             # images = convert_from_bytes('sample.pdf',500, poppler_path=r'C:\poppler\Library\bin')
-            images = convert_from_path(temp_full_path,500, poppler_path=r'C:\poppler\Library\bin')
+            # images = convert_from_path(temp_full_path,500, poppler_path=r'C:\poppler\Library\bin') # for windows
+            images = convert_from_path(temp_full_path,500, poppler_path='/usr/bin') # for linux
             # images = convert_from_path('sample.pdf',500, poppler_path=r'C:\poppler\Library\bin')
             image_urls = []
             for i, image in enumerate(images):
